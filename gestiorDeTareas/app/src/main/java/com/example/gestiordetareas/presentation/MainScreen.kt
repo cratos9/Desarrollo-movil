@@ -22,6 +22,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +49,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class FiltroEstado {
+    TODAS, PENDIENTES, COMPLETADAS
+}
+
 enum class TipoOrden {
     DEFAULT, INVERSO, A_Z, Z_A
 }
@@ -57,17 +62,23 @@ enum class TipoOrden {
 fun MainScreen() {
     val context = LocalContext.current
     var menuExpandido by remember { mutableStateOf(false) }
+    var filtroEstadoActual by remember { mutableStateOf(FiltroEstado.TODAS) }
     var ordenActual by remember { mutableStateOf(TipoOrden.DEFAULT) }
     val db = remember { AppDatabase.getDatabase(context) }
     val dao = db.tareaDao()
     val coroutineScope = rememberCoroutineScope()
     val tareasBase by dao.obtenerTareas().collectAsState(initial = emptyList())
-    val tareas = remember(tareasBase, ordenActual) {
+    val tareas = remember(tareasBase, filtroEstadoActual, ordenActual) {
+        val tareasFiltradas = when (filtroEstadoActual) {
+            FiltroEstado.TODAS -> tareasBase
+            FiltroEstado.PENDIENTES -> tareasBase.filter { !it.completada }
+            FiltroEstado.COMPLETADAS -> tareasBase.filter { it.completada }
+        }
         when (ordenActual) {
-            TipoOrden.DEFAULT -> tareasBase
-            TipoOrden.INVERSO -> tareasBase.reversed()
-            TipoOrden.A_Z -> tareasBase.sortedBy { it.titulo.lowercase() }
-            TipoOrden.Z_A -> tareasBase.sortedByDescending { it.titulo.lowercase() }
+            TipoOrden.DEFAULT -> tareasFiltradas
+            TipoOrden.INVERSO -> tareasFiltradas.reversed()
+            TipoOrden.A_Z -> tareasFiltradas.sortedBy { it.titulo.lowercase() }
+            TipoOrden.Z_A -> tareasFiltradas.sortedByDescending { it.titulo.lowercase() }
         }
     }
     var nuevaTarea by remember { mutableStateOf("") }
@@ -81,30 +92,57 @@ fun MainScreen() {
                 titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ),
             actions = {
-                IconButton(onClick = { menuExpandido = true }) { Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Más opciones") }
+                IconButton(onClick = { menuExpandido = true }) { Icon(imageVector = Icons.Default.MoreVert, contentDescription = "Mas opciones") }
                 DropdownMenu(expanded = menuExpandido, onDismissRequest = { menuExpandido = false }) {
-                    DropdownMenuItem(text = { Text("Orden Normal (ID DESC)") }, onClick = {
-                            ordenActual = TipoOrden.DEFAULT
+                    DropdownMenuItem(text = { Text(" Todas") }, onClick = {
+                            filtroEstadoActual = FiltroEstado.TODAS
                             menuExpandido = false
-                            Toast.makeText(context, "Orden por defecto", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Todas las tareas", Toast.LENGTH_SHORT).show()
                         }
                     )
-                    DropdownMenuItem(text = { Text("Orden Inverso") }, onClick = {
+                    DropdownMenuItem(text = { Text(" Pendientes") }, onClick = {
+                            filtroEstadoActual = FiltroEstado.PENDIENTES
+                            menuExpandido = false
+                            Toast.makeText(context, "Tareas pedientes", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    DropdownMenuItem(text = { Text(" Completadas") }, onClick = {
+                            filtroEstadoActual = FiltroEstado.COMPLETADAS
+                            menuExpandido = false
+                            Toast.makeText(context, "Tareas completadas", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text(" Orden normal") }, onClick = {
+                            ordenActual = TipoOrden.DEFAULT
+                            menuExpandido = false
+                            Toast.makeText(context, "Orden normal", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    DropdownMenuItem(text = { Text(" Orden inverso ") }, onClick = {
                             ordenActual = TipoOrden.INVERSO
                             menuExpandido = false
                             Toast.makeText(context, "Orden inverso", Toast.LENGTH_SHORT).show()
                         }
                     )
-                    DropdownMenuItem(text = { Text("Orden A-Z") }, onClick = {
+                    DropdownMenuItem(text = { Text(" Orden A-Z") }, onClick = {
                             ordenActual = TipoOrden.A_Z
                             menuExpandido = false
                             Toast.makeText(context, "Orden A-Z", Toast.LENGTH_SHORT).show()
                         }
                     )
-                    DropdownMenuItem(text = { Text("Orden Z-A") }, onClick = {
-                            ordenActual = TipoOrden.Z_A
+                    DropdownMenuItem(text = { Text(" Orden Z-A") }, onClick = {
+                        ordenActual = TipoOrden.Z_A
+                        menuExpandido = false
+                        Toast.makeText(context, "Orden Z-A", Toast.LENGTH_SHORT).show()
+                    }
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text(" Borrar completadas", color = MaterialTheme.colorScheme.error) }, onClick = {
                             menuExpandido = false
-                            Toast.makeText(context, "Orden Z-A", Toast.LENGTH_SHORT).show()
+                            coroutineScope.launch { withContext(Dispatchers.IO) { dao.eliminarCompletadas() }
+                            Toast.makeText(context, "Tareas completadas eliminadas", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
                 }
@@ -133,7 +171,7 @@ fun MainScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Guardar Tarea") }
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Lista de tareas", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Lista de tareas (${filtroEstadoActual.name.lowercase().capitalize()})", style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(items = tareas, key = { tarea -> tarea.id }) { tarea ->
@@ -151,7 +189,7 @@ fun MainScreen() {
                                     Toast.makeText(context, msj, Toast.LENGTH_SHORT).show()
                                 }
                             }) {
-                                Icon(imageVector = if (tarea.completada) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, contentDescription = "Marcar como completado", tint = if (tarea.completada) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+                                Icon(imageVector = if (tarea.completada) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, contentDescription = "Cambiar estado", tint = if (tarea.completada) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
                             }
                             IconButton(onClick = {
                                 coroutineScope.launch { withContext(Dispatchers.IO) { dao.eliminar(tarea) } }
